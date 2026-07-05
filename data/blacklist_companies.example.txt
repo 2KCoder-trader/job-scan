@@ -1,0 +1,5 @@
+# One company name per line; matching is case-insensitive.
+# An entry also matches names that start with it followed by a space
+# ("Haystack" matches "Haystack AI" but not "Haystacker").
+# Lines starting with # are ignored.
+Example Staffing Agency

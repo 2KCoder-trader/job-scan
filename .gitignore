@@ -1,0 +1,24 @@
+# Secrets
+.env
+
+# Browser session (large, machine-specific, contains auth cookies)
+.browser_profile/
+
+# Personal data + scan outputs — only the committed examples belong in git
+data/*
+!data/blacklist_companies.example.txt
+!data/resume_profile.example.md
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# OS
+Thumbs.db
+.DS_Store

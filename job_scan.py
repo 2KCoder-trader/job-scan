@@ -1,4 +1,4 @@
-"""Connectify — LinkedIn job scanner + scorer.
+"""job-scan — LinkedIn job scanner + scorer.
 
 Walks a LinkedIn jobs search, reads every posting's description, scores it
 against your resume with Claude, and prints / exports a ranked CSV.

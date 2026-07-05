@@ -1,4 +1,4 @@
-# Connectify
+# job-scan
 
 Scans LinkedIn job search results and scores every posting against your resume
 with Claude, so you spend your time on the applications that are actually worth

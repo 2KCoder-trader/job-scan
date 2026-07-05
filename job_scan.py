@@ -5,12 +5,9 @@ against your resume with Claude, and prints / exports a ranked CSV.
 Scan and score only — this tool never applies to anything.
 
 Run:
-    python job_scan.py --list --jitter 0     # scan now, write data/job_scan_<ts>.csv
-    python job_scan.py --list out.csv        # custom CSV path
-    python job_scan.py --max 10              # stop after 10 scored jobs
+    python job_scan.py      # scan now, write data/job_scan_<timestamp>.csv
 """
 
-import argparse
 import csv
 import logging
 import os
@@ -447,9 +444,8 @@ def _kill_stale_browser() -> None:
         log.warning(f"_kill_stale_browser failed (continuing): {e}")
 
 
-def run(max_jobs: int | None = None, pages: int = MAX_PAGES,
-        export_csv: Path | None = None) -> None:
-    """Walk JOBS_URL, score every card, print each job, optionally write a CSV."""
+def run(export_csv: Path) -> None:
+    """Walk JOBS_URL, score every card, print each job, write the ranked CSV."""
     seen_ids: set[str] = set()
     scored: list[Job] = []
     source_counts: Counter[str] = Counter()
@@ -473,7 +469,7 @@ def run(max_jobs: int | None = None, pages: int = MAX_PAGES,
         page.goto(JOBS_URL, wait_until="domcontentloaded")
         human.read(mean=3.0, sd=0.8)
 
-        for pg in range(1, pages + 1):
+        for pg in range(1, MAX_PAGES + 1):
             print(f"\n=== Page {pg} ===")
             log.info(f"Scanning page {pg} | url={page.url}")
 
@@ -522,11 +518,6 @@ def run(max_jobs: int | None = None, pages: int = MAX_PAGES,
                     f"title={job.title!r} url={url!r}"
                 )
 
-                if max_jobs and len(scored) >= max_jobs:
-                    print(f"\nReached --max={max_jobs}, stopping.")
-                    _finish(scored, len(seen_ids), source_counts, export_csv)
-                    return
-
                 human.between_pages()
 
             if not goto_next_page(page):
@@ -536,10 +527,9 @@ def run(max_jobs: int | None = None, pages: int = MAX_PAGES,
 
 
 def _finish(scored: list[Job], total_seen: int,
-            source_counts: Counter, export_csv: Path | None) -> None:
+            source_counts: Counter, export_csv: Path) -> None:
     _print_summary(scored, total_seen, source_counts)
-    if export_csv is not None:
-        _write_scored_csv(scored, export_csv)
+    _write_scored_csv(scored, export_csv)
 
 
 def _write_scored_csv(jobs: list[Job], path: Path) -> None:
@@ -559,8 +549,8 @@ def _write_scored_csv(jobs: list[Job], path: Path) -> None:
                 j.apply_url or j.li_url,
                 j.score_reason,
             ])
-    print(f"\n[list] wrote {len(ranked)} scored jobs -> {path}")
-    log.info(f"--list wrote {len(ranked)} rows to {path}")
+    print(f"\nWrote {len(ranked)} scored jobs -> {path}")
+    log.info(f"wrote {len(ranked)} rows to {path}")
 
 
 def _print_summary(scored: list[Job], total_seen: int,
@@ -590,37 +580,8 @@ def _print_summary(scored: list[Job], total_seen: int,
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Scan + score LinkedIn job postings.")
-    ap.add_argument("--max", type=int, default=None,
-                    help="stop after N scored jobs")
-    ap.add_argument("--pages", type=int, default=MAX_PAGES,
-                    help=f"maximum result pages to walk (default {MAX_PAGES})")
-    ap.add_argument("--jitter", type=int, default=30, metavar="MIN",
-                    help="sleep a random 0..MIN minutes before starting "
-                         "(default 30; pass 0 to run immediately).")
-    ap.add_argument("--list", nargs="?", const="__default__", default=None,
-                    metavar="PATH", dest="list_path",
-                    help="write a score-descending CSV of every scored job. "
-                         "PATH optional; defaults to data/job_scan_<timestamp>.csv.")
-    args = ap.parse_args()
-
-    export_csv: Path | None = None
-    if args.list_path is not None:
-        if args.list_path == "__default__":
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            export_csv = _ROOT / "data" / f"job_scan_{ts}.csv"
-        else:
-            export_csv = Path(args.list_path)
-
-    if args.jitter > 0:
-        import random, time
-        delay = random.randint(0, args.jitter * 60)
-        msg = f"[jitter] sleeping {delay}s ({delay/60:.1f} min) before scan start"
-        print(msg)
-        log.info(msg)
-        time.sleep(delay)
-
-    run(max_jobs=args.max, pages=args.pages, export_csv=export_csv)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run(export_csv=_ROOT / "data" / f"job_scan_{ts}.csv")
 
 
 if __name__ == "__main__":

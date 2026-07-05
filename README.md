@@ -55,18 +55,11 @@ python bin/signin.py
 ## Usage
 
 ```bash
-python job_scan.py --list --jitter 0     # scan now, write data/job_scan_<timestamp>.csv
-python job_scan.py --list out.csv        # custom CSV path
-python job_scan.py --max 10 --list       # stop after 10 scored jobs
-python job_scan.py --pages 2 --list      # only walk the first 2 result pages
+python job_scan.py
 ```
 
-| Flag | Meaning |
-| --- | --- |
-| `--list [PATH]` | write the ranked CSV (default `data/job_scan_<timestamp>.csv`) |
-| `--jitter MIN` | sleep a random 0..MIN minutes before starting — makes scheduled runs look organic (default 30; `0` = run immediately) |
-| `--max N` | stop after N scored jobs |
-| `--pages N` | walk at most N result pages (default 5) |
+That's it — no flags. It scans, scores, prints each job as it goes, and writes
+the ranked CSV to `data/job_scan_<timestamp>.csv`.
 
 Companies listed in `data/blacklist_companies.txt` (one per line) are skipped
 without scoring.

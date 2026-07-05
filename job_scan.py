@@ -254,6 +254,65 @@ def classify_source(apply_url: str | None, is_easy_apply: bool) -> str:
     return "custom"
 
 
+# ── External-URL handling ─────────────────────────────────────────────────────
+
+_ATS_NEEDLES = [needle for _name, needle in _ATS_HOST_PATTERNS]
+
+
+def fetch_external_page(ctx, apply_url: str) -> tuple[str, str | None]:
+    """Open the external posting in a new tab. Return (body_text, deeper_ats_url_or_None).
+
+    The "deeper ATS URL" is the first anchor on the page whose href contains any
+    known ATS hostname needle (workday/greenhouse/ashby/...). This lets us reach
+    through a company's careers landing page (e.g. careers.qualcomm.com) to the
+    actual application form (e.g. qualcomm.wd5.myworkdayjobs.com/...) without
+    clicking anything.
+    """
+    page = ctx.new_page()
+    try:
+        page.goto(apply_url, wait_until="domcontentloaded", timeout=30000)
+        human.read(mean=2.5, sd=0.6)
+        text = page.evaluate("() => document.body.innerText || ''")
+        deeper = page.evaluate(
+            """(needles) => {
+                const found = [];
+                for (const a of document.querySelectorAll('a[href]')) {
+                    const h = a.href || a.getAttribute('href') || '';
+                    if (!h || h.startsWith('mailto:') || h.startsWith('javascript:')) continue;
+                    const lo = h.toLowerCase();
+                    for (const n of needles) {
+                        if (lo.includes(n)) {
+                            const label = ((a.innerText || a.textContent || '') + ' ' +
+                                           (a.getAttribute('aria-label') || '')).toLowerCase();
+                            found.push({ href: h, applyish: /apply/.test(label) });
+                            break;
+                        }
+                    }
+                }
+                if (!found.length) return null;
+                // Workday posting URLs always contain "/job/"; tenant login/landing
+                // pages (and footer "Powered by Workday" links) don't. Prefer those.
+                const isWorkdayPosting = (h) => {
+                    const lo = h.toLowerCase();
+                    return (lo.includes('myworkdayjobs.com') || lo.includes('workday.com'))
+                        && lo.includes('/job/');
+                };
+                const wdPosting = found.find(f => isWorkdayPosting(f.href));
+                if (wdPosting) return wdPosting.href;
+                const preferred = found.find(f => f.applyish);
+                return (preferred || found[0]).href;
+            }""",
+            _ATS_NEEDLES,
+        )
+        return (text or "").strip(), deeper
+    except Exception as e:
+        log.warning(f"fetch_external_page failed | url={apply_url} err={e}")
+        return "", None
+    finally:
+        try: page.close()
+        except Exception: pass
+
+
 # ── Per-card flow ─────────────────────────────────────────────────────────────
 
 def click_card(page, job_id: str) -> bool:
@@ -277,8 +336,10 @@ def click_card(page, job_id: str) -> bool:
     return True
 
 
-def build_job(page, card: dict) -> Job | None:
-    """Click into the card, fill out a Job from the detail panel."""
+def build_job(ctx, page, card: dict) -> Job | None:
+    """Click into the card, fill out a Job from the detail panel. For external
+    postings, follow the apply link in a background tab and score the JD from
+    the company/ATS page itself rather than LinkedIn's summary pane."""
     job_id = card["id"]
     if not click_card(page, job_id):
         return None
@@ -298,14 +359,37 @@ def build_job(page, card: dict) -> Job | None:
         log.info(f"Already applied | id={job_id} title={card.get('title','')!r} — skipping")
         return None
 
+    source = classify_source(apply_url, is_easy)
+
+    description = detail.get("description") or ""
+    if source != "linkedin_easy" and apply_url:
+        ext_text, deeper_url = fetch_external_page(ctx, apply_url)
+        if ext_text:
+            description = ext_text
+        # If we landed on a generic company-careers page but found a deeper
+        # link into a known ATS, promote the source label + apply_url.
+        if deeper_url:
+            deeper_source = classify_source(deeper_url, False)
+            # Reject Workday "upgrades" that aren't real posting URLs — tenant
+            # login pages and footer "Powered by Workday" links lack "/job/".
+            if deeper_source == "workday" and "/job/" not in deeper_url.lower():
+                log.info(f"Source upgrade rejected | id={job_id} workday link "
+                         f"without /job/ ({deeper_url})")
+                deeper_source = "custom"
+            if deeper_source != "custom" and deeper_source != source:
+                log.info(f"Source upgrade | id={job_id} {source}->{deeper_source} "
+                         f"via {deeper_url}")
+                source = deeper_source
+                apply_url = deeper_url
+
     return Job(
         id=job_id,
         title=card.get("title", "") or job_id,
         company=card.get("company", ""),
         li_url=f"https://www.linkedin.com/jobs/view/{job_id}/",
-        source=classify_source(apply_url, is_easy),
+        source=source,
         apply_url=apply_url if not is_easy else None,
-        job_description=detail.get("description") or "",
+        job_description=description,
         applicants=detail.get("applicants"),
     )
 
@@ -414,7 +498,7 @@ def run(max_jobs: int | None = None, pages: int = MAX_PAGES,
                     log.info(f"Blacklist skip | id={card['id']} company={card.get('company')!r}")
                     continue
 
-                job = build_job(page, card)
+                job = build_job(ctx, page, card)
                 if not job:
                     continue
                 source_counts[job.source] += 1

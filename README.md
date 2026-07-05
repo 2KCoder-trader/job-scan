@@ -21,8 +21,10 @@ score,id,title,company,source,applicants,url,score_reason
    profile via Playwright — the session stays logged in between runs.
 2. Walks the result pages, lazy-scrolling the list so every card loads.
 3. Clicks each card and reads the full job description, applicant count, and
-   Apply-button target from the detail panel; classifies which ATS the
-   application would go through.
+   Apply-button target from the detail panel. External postings are followed
+   in a background tab so the description is pulled from the company/ATS page
+   itself — and a generic careers-page link gets resolved to the underlying
+   ATS (Workday / Greenhouse / ...) for an accurate source label.
 4. Sends the job description + your resume (`data/resume_profile.md`) to
    Claude Haiku, which returns a 0–100 fit score and a one-sentence reason.
    The resume rides in a cached system prompt, so scoring hundreds of jobs
